@@ -1,0 +1,51 @@
+[
+  {
+    "description": "fjfjfjf",
+    "amount": 23.4,
+    "paidBy": "Kevin",
+    "participants": [
+      "Kevin",
+      "Kimberly",
+      "Silvia"
+    ],
+    "maxContributions": {}
+  },
+  {
+    "id": "bill-0",
+    "description": "fjfjfjf fhfhskids",
+    "amount": 23.4,
+    "paidBy": "Kevin",
+    "participants": [
+      "Kevin",
+      "Kimberly",
+      "Silvia"
+    ],
+    "maxContributions": {}
+  },
+  {
+    "id": "bill-0",
+    "description": "fjfjfjf fhfhskids",
+    "amount": 23.4,
+    "paidBy": "Kevin",
+    "participants": [
+      "Kevin",
+      "Kimberly",
+      "Silvia",
+      "Verana"
+    ],
+    "maxContributions": {}
+  },
+  {
+    "id": "bill-1745211760392",
+    "description": "hjhjgb gjgg",
+    "amount": 344.9,
+    "paidBy": "Kimberly",
+    "participants": [
+      "Jacqueline",
+      "Kimberly",
+      "Silvia",
+      "Verana"
+    ],
+    "maxContributions": {}
+  }
+]

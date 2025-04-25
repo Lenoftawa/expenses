@@ -19,20 +19,32 @@ const users = ["Jacqueline", "Kevin", "Kimberly", "Silvia", "Verana"];
 function splitBill(bill: Bill): Record<string, number> {
   const balances: Record<string, number> = {};
   const { amount, participants, maxContributions = {} } = bill;
-
-  let fixedTotal = 0;
-  let remainingParticipants: string[] = [];
-
+  
+  // Initialize balances for all participants
   for (const user of participants) {
-    if (maxContributions[user] !== undefined) {
+    balances[user] = 0;
+  }
+  
+  // 1. Calculate the proportion for each person (equal split)
+  const equalShare = amount / participants.length;
+  
+  // 2. Check for participants with maximums less than their proportion
+  let totalAssigned = 0;
+  let remainingParticipants: string[] = [];
+  
+  for (const user of participants) {
+    if (maxContributions[user] !== undefined && maxContributions[user] < equalShare) {
+      // Set their maximum as their debt
       balances[user] = maxContributions[user];
-      fixedTotal += maxContributions[user];
+      totalAssigned += maxContributions[user];
     } else {
+      // Add to remaining participants
       remainingParticipants.push(user);
     }
   }
-
-  const remainingAmount = amount - fixedTotal;
+  
+  // 3. Distribute the remainder to all remaining participants
+  const remainingAmount = amount - totalAssigned;
   
   if (remainingParticipants.length > 0) {
     const share = remainingAmount / remainingParticipants.length;
@@ -41,35 +53,73 @@ function splitBill(bill: Bill): Record<string, number> {
       balances[user] = share;
     }
   } else if (remainingAmount > 0) {
-    const totalMax = Object.values(maxContributions).reduce((sum, val) => sum + val, 0);
-    
-    if (totalMax < amount) {
-      balances[bill.paidBy] = (balances[bill.paidBy] || 0) + remainingAmount;
-    } else {
-      for (const user of participants) {
-        if (maxContributions[user] !== undefined) {
-          const proportion = maxContributions[user] / totalMax;
-          balances[user] += remainingAmount * proportion;
-        }
-      }
-    }
+    // If all participants have maximums and there's still remaining amount,
+    // the person who paid covers the difference
+    balances[bill.paidBy] = remainingAmount;
   }
-
+  
+  // Log the balances for debugging
+  console.log("Split bill balances:", balances);
+  
   return balances;
 }
 
 function computeNetBalances(bills: Bill[]): Record<string, number> {
   const net: Record<string, number> = {};
 
-  for (const bill of bills) {
-    const split = splitBill(bill);
-
-    for (const user of Object.keys(split)) {
-      net[user] = (net[user] || 0) - split[user];
-    }
-
-    net[bill.paidBy] = (net[bill.paidBy] || 0) + bill.amount;
+  // Initialize net balances for all users
+  for (const user of users) {
+    net[user] = 0;
   }
+
+  for (const bill of bills) {
+    // Add the full amount to the payer
+    net[bill.paidBy] = (net[bill.paidBy] || 0) + bill.amount;
+    
+    // Calculate the equal share
+    const equalShare = bill.amount / bill.participants.length;
+    
+    // Track how much has been assigned and who has a maximum
+    let totalAssigned = 0;
+    const participantsWithMax: string[] = [];
+    const participantsWithoutMax: string[] = [];
+    
+    // First pass: identify participants with maximums
+    for (const participant of bill.participants) {
+      // Include the payer in the calculation if they are a participant
+      const maxContribution = bill.maxContributions?.[participant];
+      
+      if (maxContribution !== undefined && maxContribution > 0) {
+        // This participant has a maximum greater than 0
+        participantsWithMax.push(participant);
+        // Assign their maximum
+        net[participant] = (net[participant] || 0) - maxContribution;
+        totalAssigned += maxContribution;
+      } else {
+        // This participant has no maximum (max = 0)
+        participantsWithoutMax.push(participant);
+      }
+    }
+    
+    // Calculate the remaining amount to be distributed
+    const remainingAmount = bill.amount - totalAssigned;
+    
+    // Distribute the remaining amount among participants without a maximum
+    if (participantsWithoutMax.length > 0) {
+      const share = remainingAmount / participantsWithoutMax.length;
+      
+      for (const participant of participantsWithoutMax) {
+        net[participant] = (net[participant] || 0) - share;
+      }
+    } else if (remainingAmount > 0) {
+      // If all participants have maximums and there's still remaining amount,
+      // the person who paid covers the difference
+      net[bill.paidBy] = (net[bill.paidBy] || 0) - remainingAmount;
+    }
+  }
+
+  // Log the net balances for debugging
+  console.log("Net balances:", net);
 
   return net;
 }
@@ -78,16 +128,22 @@ function optimizeSettlements(net: Record<string, number>) {
   const creditors = [];
   const debtors = [];
 
+  // Separate creditors (positive balance) and debtors (negative balance)
   for (const [user, balance] of Object.entries(net)) {
-    if (balance > 0) creditors.push({ user, amount: balance });
-    else if (balance < 0) debtors.push({ user, amount: -balance });
+    if (balance > 0.01) { // Use a small threshold to avoid floating point issues
+      creditors.push({ user, amount: balance });
+    } else if (balance < -0.01) {
+      debtors.push({ user, amount: -balance });
+    }
   }
 
+  // Sort by amount (largest first)
   creditors.sort((a, b) => b.amount - a.amount);
   debtors.sort((a, b) => b.amount - a.amount);
 
   const settlements = [];
 
+  // Match creditors with debtors
   while (creditors.length && debtors.length) {
     const creditor = creditors[0];
     const debtor = debtors[0];
@@ -98,9 +154,12 @@ function optimizeSettlements(net: Record<string, number>) {
     creditor.amount -= settleAmount;
     debtor.amount -= settleAmount;
 
-    if (creditor.amount === 0) creditors.shift();
-    if (debtor.amount === 0) debtors.shift();
+    if (creditor.amount < 0.01) creditors.shift();
+    if (debtor.amount < 0.01) debtors.shift();
   }
+
+  // Log the settlements for debugging
+  console.log("Settlements:", settlements);
 
   return settlements;
 }
@@ -115,6 +174,7 @@ export default function Home() {
     participants: [],
     maxContributions: {} 
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -203,34 +263,71 @@ export default function Home() {
   };
 
   const handleSubmit = async () => {
-    if (form.description && form.amount && form.paidBy && form.participants.length > 0) {
-      const billData = {
-        ...form,
-        id: form.id || `bill-${Date.now()}`,
-        amount: parseFloat(form.amount)
-      };
+    // Reset errors
+    const newErrors: Record<string, string> = {};
+    
+    // Validate form
+    if (!form.description) {
+      newErrors.description = 'Please enter a description';
+    }
+    
+    if (!form.amount || isNaN(parseFloat(form.amount)) || parseFloat(form.amount) <= 0) {
+      newErrors.amount = 'Please enter a valid amount';
+    }
+    
+    if (!form.paidBy) {
+      newErrors.paidBy = 'Please select who paid';
+    }
+    
+    if (form.participants.length === 0) {
+      newErrors.participants = 'Please select at least one participant';
+    }
+    
+    // If there are errors, update the state and return
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+    
+    const billData = {
+      ...form,
+      id: form.id || `bill-${Date.now()}`,
+      amount: parseFloat(form.amount)
+    };
 
-      try {
-        const response = await fetch('/api/bills' + (isEditing ? `?id=${billData.id}` : ''), {
-          method: isEditing ? 'PUT' : 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(billData),
-        });
+    try {
+      console.log('Submitting bill:', billData);
+      
+      const response = await fetch('/api/bills' + (isEditing ? `?id=${billData.id}` : ''), {
+        method: isEditing ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(billData),
+      });
 
-        if (!response.ok) throw new Error('Failed to save bill');
-        
-        await fetchBills(); // Refresh the bills list
-        resetForm();
-      } catch (err) {
-        setError('Failed to save bill');
-        console.error('Error saving bill:', err);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save bill');
       }
+      
+      console.log('Bill saved successfully:', data);
+      await fetchBills(); // Refresh the bills list
+      resetForm();
+      setErrors({}); // Clear any errors
+    } catch (err) {
+      setError(`Failed to save bill: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      console.error('Error saving bill:', err);
     }
   };
 
   const deleteBill = async (billId: string) => {
+    if (!billId) {
+      setError('Cannot delete bill: Missing bill ID');
+      return;
+    }
+    
     if (window.confirm('Are you sure you want to delete this bill?')) {
       try {
         const response = await fetch('/api/bills', {
@@ -241,14 +338,18 @@ export default function Home() {
           body: JSON.stringify({ id: billId }),
         });
 
-        if (!response.ok) throw new Error('Failed to delete bill');
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to delete bill');
+        }
         
         await fetchBills(); // Refresh the bills list
         if (isEditing && form.id === billId) {
           resetForm();
         }
       } catch (err) {
-        setError('Failed to delete bill');
+        setError(`Failed to delete bill: ${err instanceof Error ? err.message : 'Unknown error'}`);
         console.error('Error deleting bill:', err);
       }
     }
@@ -289,29 +390,49 @@ export default function Home() {
                 </Button>
               )}
             </div>
-            <Input
-              placeholder="Description"
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
-            <Input
-              type="number"
-              placeholder="Amount"
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
-            />
-            <select
-              className="w-full p-2 border rounded"
-              value={form.paidBy}
-              onChange={(e) => setForm({ ...form, paidBy: e.target.value })}
-            >
-              <option value="">Who paid?</option>
-              {users.map(user => (
-                <option key={user} value={user}>{user}</option>
-              ))}
-            </select>
+            <div>
+              <Input
+                placeholder="Description"
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className={errors.description ? "border-red-500" : ""}
+              />
+              {errors.description && (
+                <p className="text-red-500 text-sm mt-1">{errors.description}</p>
+              )}
+            </div>
+            <div>
+              <Input
+                type="number"
+                placeholder="Amount"
+                value={form.amount}
+                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                className={errors.amount ? "border-red-500" : ""}
+              />
+              {errors.amount && (
+                <p className="text-red-500 text-sm mt-1">{errors.amount}</p>
+              )}
+            </div>
+            <div>
+              <select
+                className={`w-full p-2 border rounded ${errors.paidBy ? "border-red-500" : ""}`}
+                value={form.paidBy}
+                onChange={(e) => setForm({ ...form, paidBy: e.target.value })}
+              >
+                <option value="">Who paid?</option>
+                {users.map(user => (
+                  <option key={user} value={user}>{user}</option>
+                ))}
+              </select>
+              {errors.paidBy && (
+                <p className="text-red-500 text-sm mt-1">{errors.paidBy}</p>
+              )}
+            </div>
             <div>
               <h3 className="font-bold mb-2">Participants</h3>
+              {errors.participants && (
+                <p className="text-red-500 text-sm mb-2">{errors.participants}</p>
+              )}
               {users.map(user => (
                 <div key={user} className="mb-2">
                   <label className="flex items-center gap-2">

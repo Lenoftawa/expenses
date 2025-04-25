@@ -33,10 +33,26 @@ function splitBill(bill: Bill): Record<string, number> {
   }
 
   const remainingAmount = amount - fixedTotal;
-  const share = remainingAmount / remainingParticipants.length;
-
-  for (const user of remainingParticipants) {
-    balances[user] = share;
+  
+  if (remainingParticipants.length > 0) {
+    const share = remainingAmount / remainingParticipants.length;
+    
+    for (const user of remainingParticipants) {
+      balances[user] = share;
+    }
+  } else if (remainingAmount > 0) {
+    const totalMax = Object.values(maxContributions).reduce((sum, val) => sum + val, 0);
+    
+    if (totalMax < amount) {
+      balances[bill.paidBy] = (balances[bill.paidBy] || 0) + remainingAmount;
+    } else {
+      for (const user of participants) {
+        if (maxContributions[user] !== undefined) {
+          const proportion = maxContributions[user] / totalMax;
+          balances[user] += remainingAmount * proportion;
+        }
+      }
+    }
   }
 
   return balances;
@@ -145,6 +161,45 @@ export default function Home() {
     });
     setIsEditing(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const updateMaxContribution = (user: string, value: string) => {
+    const numValue = value === '' ? undefined : parseFloat(value);
+    
+    setForm({
+      ...form,
+      maxContributions: {
+        ...form.maxContributions,
+        [user]: numValue
+      }
+    });
+  };
+
+  const toggleParticipant = (user: string, isChecked: boolean) => {
+    let newParticipants;
+    let newMaxContributions = { ...form.maxContributions };
+    
+    if (isChecked) {
+      // Add participant
+      newParticipants = [...form.participants, user];
+      
+      // Initialize max contribution if not already set
+      if (newMaxContributions[user] === undefined) {
+        newMaxContributions[user] = 0;
+      }
+    } else {
+      // Remove participant
+      newParticipants = form.participants.filter((p: string) => p !== user);
+      
+      // Remove max contribution
+      delete newMaxContributions[user];
+    }
+    
+    setForm({
+      ...form,
+      participants: newParticipants,
+      maxContributions: newMaxContributions
+    });
   };
 
   const handleSubmit = async () => {
@@ -258,19 +313,27 @@ export default function Home() {
             <div>
               <h3 className="font-bold mb-2">Participants</h3>
               {users.map(user => (
-                <label key={user} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.participants.includes(user)}
-                    onChange={(e) => {
-                      const newParticipants = e.target.checked
-                        ? [...form.participants, user]
-                        : form.participants.filter((p: string) => p !== user);
-                      setForm({ ...form, participants: newParticipants });
-                    }}
-                  />
-                  {user}
-                </label>
+                <div key={user} className="mb-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.participants.includes(user)}
+                      onChange={(e) => toggleParticipant(user, e.target.checked)}
+                    />
+                    {user}
+                  </label>
+                  
+                  {form.participants.includes(user) && (
+                    <div className="ml-6 mt-1">
+                      <Input
+                        type="number"
+                        placeholder="Maximum contribution (optional)"
+                        value={form.maxContributions[user] || ''}
+                        onChange={(e) => updateMaxContribution(user, e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
             <Button
@@ -314,6 +377,16 @@ export default function Home() {
                       <p>Amount: ${bill.amount}</p>
                       <p>Paid by: {bill.paidBy}</p>
                       <p>Participants: {bill.participants.join(', ')}</p>
+                      {bill.maxContributions && Object.keys(bill.maxContributions).length > 0 && (
+                        <div className="mt-2">
+                          <p className="font-semibold">Maximum contributions:</p>
+                          <ul className="list-disc list-inside">
+                            {Object.entries(bill.maxContributions).map(([user, amount]) => (
+                              <li key={user}>{user}: ${amount || 'No limit'}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <Button 

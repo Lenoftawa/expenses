@@ -36,39 +36,34 @@ const writeBills = (bills: any[]) => {
   fs.writeFileSync(BILLS_FILE_PATH, JSON.stringify(bills, null, 2));
 };
 
+// This is a simple in-memory store for demonstration
+// In production, you would use a database
+let bills: any[] = [];
+
 // GET handler to retrieve all bills
 export async function GET() {
-  const bills = readBills();
   return NextResponse.json(bills);
 }
 
 // POST handler to add a new bill
 export async function POST(request: NextRequest) {
-  try {
-    const bill = await request.json();
-    const bills = readBills();
-    bills.push(bill);
-    writeBills(bills);
-    return NextResponse.json({ success: true, bill });
-  } catch (error) {
-    console.error('Error adding bill:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to add bill' },
-      { status: 500 }
-    );
-  }
+  const bill = await request.json();
+  bills.push(bill);
+  return NextResponse.json(bill);
+}
+
+// PUT handler to update an existing bill
+export async function PUT(request: NextRequest) {
+  const updatedBill = await request.json();
+  bills = bills.map(bill => 
+    bill.id === updatedBill.id ? updatedBill : bill
+  );
+  return NextResponse.json(updatedBill);
 }
 
 // DELETE handler to reset all bills
-export async function DELETE() {
-  try {
-    writeBills([]);
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error resetting bills:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to reset bills' },
-      { status: 500 }
-    );
-  }
+export async function DELETE(request: NextRequest) {
+  const { id } = await request.json();
+  bills = bills.filter(bill => bill.id !== id);
+  return NextResponse.json({ success: true });
 } 
